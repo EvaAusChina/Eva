@@ -1,0 +1,104 @@
+---
+title: "Practical Machine Learning"
+author: "EvaLiang"
+date: "2020/03/20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Project Introduction
+#### 1. model construction
+Firstly, we obtain training data with 19622 individuals and 160 characteristic. We partition the data into training data(70%) and validation data(30%) for later cross validation. The next step is to clean data by removing confounders, columns with many NAs and descriptive columns, after which 13737 individual data with 53 characteristic are left. Since there are too many predictors, we use principle component analysis to construct power components which can explain 80% of the total variance. Then we use random forest to build a model based on the twelve components selected. 
+
+#### 2. estimate of  error rate
+According to random forest model, estimate of expected out of sample error is 4.15%
+
+#### 3. cross validation
+Extract the same variables as training data from validation data. The PCA model and random forest model based on training data are apply to validation data. We use confusionMatrix to calculate the accuracy, which reaches 0.9543, and p-value is significant.
+
+#### 4. out-of-sample validation
+Testing data with 20 individuals are treated with the same procedure mentioned above: data cleaning, predict PC and random forest prediction.
+
+### Method
+```{r, include = FALSE}
+library(caret)
+library(randomForest)
+set.seed(1688)
+training <- read.csv("linear regression in practice/pml-training.csv", stringsAsFactors = FALSE)
+```
+1. First, have a look at the data.
+
+```{r, error=FALSE}
+table(training$classe)
+```
+
+The training data have  19622 observations and 160 features, with five classes(A,B,C,D,E) in total. 
+
+The testing data have 20 observations and 160 features.
+
+2. Use cross-validation method to built a valid model; 70% of the original data is used for model building (training data) while the rest of 30% of the data is used for testing (testing data)
+3. Remove confounders, columns with many NAs and descriptive columns,
+Now there are 95 features(including classe). The dimension of training data and validation data are shown below:
+```{r, error=FALSE}
+set.seed(1688)
+trainset <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+Training <- training[trainset, ]
+Validation <- training[-trainset, ]
+### remove confounder(prevent overfitting)
+nzvcol <- nearZeroVar(Training)
+Training <- Training[, -nzvcol]
+cntlength <- sapply(Training, function(x) {
+    sum(!(is.na(x) | x == ""))
+})
+nullcol <- names(cntlength[cntlength < 0.9 * nrow(Training)])
+descriptcol <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+excludecols <- c(descriptcol, nullcol)
+Training <- Training[, !names(Training) %in% excludecols]
+valid <- Validation[, colnames(Training)]
+list(dim(Training), dim(valid))
+```
+
+4. Apply PCA to reduce the number of variables and explained at least 80% of the variance, in this case, we need 12 components.
+```{r, error=FALSE}
+va_pca <- preProcess(Training,method="pca",thresh=.8)
+va_pca
+va_pca <- preProcess(Training,method="pca",pcaComp=12) 
+head(va_pca$rotation)
+princ <- predict(va_pca,Training)
+```
+
+5. We utilize random forest to build model.
+```{r, error=FALSE}
+library(randomForest)
+Training$classe <- factor(Training$classe)
+rf <- randomForest(Training$classe~., data = princ, do.trace=F)
+rf
+importance(rf)
+```
+
+6. Apply PCA and Random Forest model into vaidation data.Overall accuracy reaches 95.43%.
+```{r,  error=FALSE}
+validprinc <- predict(va_pca, valid)
+valid$classe <- factor(valid$classe)
+confusionMatrix(valid$classe, predict(rf,validprinc))
+```
+7. Out-of-Sample prediction on testing data
+```{r,  error=FALSE}
+testing <- read.csv("linear regression in practice/pml-testing.csv", stringsAsFactors = FALSE)
+cla <- which(colnames(Training) == "classe")
+testing1 <- testing[,colnames(Training)[-cla]]
+testprin <- predict(va_pca, testing1)
+pre_classe <- predict(rf, testprin)
+table(pre_classe)
+```
+
+
+
+
+
+
+
+
